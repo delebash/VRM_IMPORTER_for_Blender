@@ -23,7 +23,7 @@ from io_scene_vrm.importer.vrm_load import parse_glb  # noqa: E402
 # pylint: enable=wrong-import-position;
 
 
-def exist_or_makedir(path):
+def exist_or_makedir(path: str) -> str:
     ripped_dir = os.path.join(os.path.dirname(os.path.abspath(path)), "ripped")
     if not os.path.exists(ripped_dir):
         os.mkdir(ripped_dir)

@@ -10,7 +10,7 @@ import os
 import re
 from collections import OrderedDict
 from sys import float_info
-from typing import List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import bpy
 from mathutils import Vector
@@ -28,13 +28,15 @@ class Bones_rename(bpy.types.Operator):  # noqa: N801
     bl_description = "Rename VRoid_bones as Blender type"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context):
-        def reprstr(bone_name):
+    def execute(self, context: bpy.types.Context) -> Set[str]:
+        def reprstr(bone_name: str) -> str:
             ml = re.match("(.*)_" + "L" + "_(.*)", bone_name)
             mr = re.match("(.*)_" + "R" + "_(.*)", bone_name)
             if ml or mr:
                 tmp = ""
                 ma = ml if ml else mr
+                if ma is None:
+                    raise Exception(f"{bone_name} is not vroid bone name")
                 for y in ma.groups():
                     tmp += y + "_"
                 tmp += "R" if mr else "L"
@@ -66,7 +68,7 @@ class Add_VRM_extensions_to_armature(bpy.types.Operator):  # noqa: N801
     bl_description = "Add vrm extensions & metas to armature"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context):
+    def execute(self, context: bpy.types.Context) -> Set[str]:
         ICYP_OT_MAKE_ARMATURE.make_extension_setting_and_metas(context.active_object)
         return {"FINISHED"}
 
@@ -77,7 +79,7 @@ class Add_VRM_require_humanbone_custom_property(bpy.types.Operator):  # noqa: N8
     bl_description = ""
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context):
+    def execute(self, context: bpy.types.Context) -> Set[str]:
         arm = bpy.data.armatures[bpy.context.active_object.data.name]
         for req in vrm_types.HumanBones.requires:
             if req not in arm:
@@ -91,7 +93,7 @@ class Add_VRM_defined_humanbone_custom_property(bpy.types.Operator):  # noqa: N8
     bl_description = ""
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context):
+    def execute(self, context: bpy.types.Context) -> Set[str]:
         arm = bpy.data.armatures[bpy.context.active_object.data.name]
         for d in vrm_types.HumanBones.defines:
             if d not in arm:
@@ -105,7 +107,7 @@ class Vroid2VRC_lipsync_from_json_recipe(bpy.types.Operator):  # noqa: N801
     bl_description = "Make lipsync from VRoid to VRC by json"
     bl_options = {"REGISTER", "UNDO"}
 
-    def execute(self, context):
+    def execute(self, context: bpy.types.Context) -> Set[str]:
         recipe_uri = os.path.join(
             os.path.dirname(__file__), "vroid2vrc_lipsync_recipe.json"
         )
@@ -225,7 +227,7 @@ class WM_OT_vrmValidatorPrivate(bpy.types.Operator):  # noqa: N801
             return {"FINISHED"}
         return context.window_manager.invoke_props_dialog(self, width=800)
 
-    def draw(self, context: bpy.types.Context):
+    def draw(self, context: bpy.types.Context) -> None:
         layout = self.layout
         errors = [error for error in self.errors if error.fatal]
         warnings = [error for error in self.errors if not error.fatal]
@@ -256,7 +258,7 @@ class WM_OT_vrmValidatorPrivate(bpy.types.Operator):  # noqa: N801
         warning_messages = []
         print("validation start")
         armature_count = 0
-        armature = None
+        armature: Optional[bpy.types.Object] = None
         node_names = []
 
         # region export object seeking
@@ -440,7 +442,7 @@ class WM_OT_vrmValidatorPrivate(bpy.types.Operator):  # noqa: N801
                 for (
                     texture_val
                 ) in vrm_types.MaterialMtoon.texture_kind_exchange_dic.values():
-                    if texture_val is None or texture_val == "ReceiveShadow_Texture":
+                    if texture_val == "ReceiveShadow_Texture":
                         continue
                     node_material_input_check(
                         node, material, "TEX_IMAGE", texture_val, messages, used_images
@@ -563,7 +565,11 @@ class WM_OT_vrmValidatorPrivate(bpy.types.Operator):  # noqa: N801
 
             # region textblock_validate
 
-            def text_block_name_to_json(textblock_name):
+            def text_block_name_to_json(
+                textblock_name: str,
+            ) -> Union[List[Any], Dict[str, Any], int, float, bool, str, None]:
+                if armature is None:
+                    return None
                 if textblock_name not in armature:
                     messages.append(
                         lang_support(
@@ -592,16 +598,18 @@ class WM_OT_vrmValidatorPrivate(bpy.types.Operator):  # noqa: N801
                 except json.JSONDecodeError as e:
                     messages.append(
                         lang_support(
-                            f'Cannot load textblock of "{textblock_name}" as Json at line {e.pos.lineno}. '
+                            f'Cannot load textblock of "{textblock_name}" as Json at line {e.lineno}. '
                             + "please check json grammar.",
-                            f"「{textblock_name}」のJsonとしての読み込みに失敗しました。{e.pos.lineno}行目付近にエラーがあります。"
+                            f"「{textblock_name}」のJsonとしての読み込みに失敗しました。{e.lineno}行目付近にエラーがあります。"
                             + "形式を確認してください。",
                         )
                     )
                     json_as_dict = None
                 return json_as_dict
 
-            def text_block_write(block_name, data_dict):
+            def text_block_write(
+                block_name: str, data_dict: Dict[str, Any]
+            ) -> bpy.types.Text:
                 textblock = bpy.data.texts.new(name=f"{block_name}_.json")
                 textblock.write(json.dumps(data_dict, indent=4))
                 return textblock
@@ -619,7 +627,7 @@ class WM_OT_vrmValidatorPrivate(bpy.types.Operator):  # noqa: N801
             # region first_person
             first_person_params_name = "firstPerson_params"
             firstperson_params = text_block_name_to_json(first_person_params_name)
-            if firstperson_params is not None:
+            if isinstance(firstperson_params, dict):
                 fp_bone = json_get(firstperson_params, ["firstPersonBone"], -1)
                 if (
                     fp_bone != -1
@@ -673,7 +681,7 @@ class WM_OT_vrmValidatorPrivate(bpy.types.Operator):  # noqa: N801
             # region blendshape_master
             blendshape_group_name = "blendshape_group"
             blendshape_groups = text_block_name_to_json(blendshape_group_name)
-            if blendshape_groups is None:
+            if not isinstance(blendshape_groups, list):
                 blendshape_groups = []
             # TODO material value and material existence
             for blendshape_group in blendshape_groups:
@@ -732,7 +740,7 @@ class WM_OT_vrmValidatorPrivate(bpy.types.Operator):  # noqa: N801
             # region springbone
             spring_bonegroup_list = text_block_name_to_json("spring_bone")
             bone_names_list = [bone.name for bone in armature.data.bones]
-            if spring_bonegroup_list is None:
+            if not isinstance(spring_bonegroup_list, list):
                 spring_bonegroup_list = []
             for bone_group in spring_bonegroup_list:
                 for bone_name in bone_group["bones"]:
@@ -787,7 +795,7 @@ def node_material_input_check(
     shader_val: str,
     messages: List[str],
     used_images: List[bpy.types.Image],
-):
+) -> None:
     if node.inputs[shader_val].links:
         n = node.inputs[shader_val].links[0].from_node
         if n.type != expect_node_type:

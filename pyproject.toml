@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "io_scene_vrm"
+name = "VRM_IMPORTER_for_Blender"
 version = "1.0.0" # Dummy version. See __init__.bl_info["version"] instead.
 description = ""
 authors = ["Isamu Mogi <isamu@leafytree.jp>", "iCyP"]

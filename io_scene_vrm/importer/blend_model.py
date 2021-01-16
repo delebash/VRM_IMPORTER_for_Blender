@@ -12,6 +12,7 @@ import json
 import os.path
 import sys
 from math import radians, sqrt
+from typing import Any, Dict, List, Optional, Sequence, Set
 
 import bpy
 import numpy
@@ -26,16 +27,16 @@ from ..vrm_types import nested_json_value_getter as json_get
 class BlendModel:
     def __init__(
         self,
-        context,
+        context: bpy.types.Context,
         vrm_pydata: vrm_types.VrmPydata,
         filepath: str,
-        is_put_spring_bone_info,
+        is_put_spring_bone_info: bool,
         import_normal: bool,
         remove_doubles: bool,
         use_simple_principled_material: bool,
         set_bone_roll: bool,
         use_in_blender: bool,
-    ):
+    ) -> None:
         self.meshes = None
         self.is_put_spring_bone_info = is_put_spring_bone_info
         self.import_normal = import_normal
@@ -47,9 +48,9 @@ class BlendModel:
         self.context = context
         self.vrm_pydata = vrm_pydata
         self.textures = None  # TODO: The index of self.textures is image index. See self.texture_load(). Will fix it.
-        self.armature = None
+        self.armature: Optional[bpy.types.Object] = None
         self.bones = None
-        self.material_dict = None
+        self.material_dict: Dict[int, Any] = {}
         self.primitive_obj_dict = None
         self.mesh_joined_objects = None
         self.model_name = (
@@ -62,10 +63,10 @@ class BlendModel:
         self.context.scene.collection.children.link(self.model_collection)
         self.vrm_model_build()
 
-    def vrm_model_build(self):
+    def vrm_model_build(self) -> None:
         wm = bpy.context.window_manager
 
-        def prog(z):
+        def prog(z: int) -> int:
             wm.progress_update(z)
             return z + 1
 
@@ -105,13 +106,12 @@ class BlendModel:
                 # https://developer.blender.org/T79182
                 bpy.context.window.cursor_modal_set("HAND")
                 bpy.context.window.cursor_modal_restore()
-        return 0
 
     @staticmethod
-    def axis_glb_to_blender(vec3):
+    def axis_glb_to_blender(vec3: Sequence[float]) -> List[float]:
         return [vec3[i] * t for i, t in zip([0, 2, 1], [-1, 1, 1])]
 
-    def connect_bones(self):
+    def connect_bones(self) -> None:
         # Blender_VRMAutoIKSetup (MIT License)
         # https://booth.pm/ja/items/1697977
         previous_active = bpy.context.view_layer.objects.active
@@ -119,8 +119,10 @@ class BlendModel:
             bpy.context.view_layer.objects.active = self.armature  # アーマチャーをアクティブに
             bpy.ops.object.mode_set(mode="EDIT")  # エディットモードに入る
             disconnected_bone_names = []  # 結合されてないボーンのリスト
-            if json_get(
-                self.vrm_pydata.json, ["extensions", "VRM", "exporterVersion"], ""
+            if str(
+                json_get(
+                    self.vrm_pydata.json, ["extensions", "VRM", "exporterVersion"], ""
+                )
             ).startswith("VRoidStudio-"):
                 disconnected_bone_names = [
                     "J_Bip_R_Hand",
@@ -149,7 +151,7 @@ class BlendModel:
         finally:
             bpy.context.view_layer.objects.active = previous_active
 
-    def scene_init(self):
+    def scene_init(self) -> bpy.types.Object:
         # active_objectがhideだとbpy.ops.object.mode_set.poll()に失敗してエラーが出るのでその回避と、それを元に戻す
         affected_object = None
         if self.context.active_object is not None:
@@ -163,7 +165,7 @@ class BlendModel:
             bpy.ops.object.select_all(action="DESELECT")
         return affected_object
 
-    def finishing(self, affected_object):
+    def finishing(self, affected_object: bpy.types.Object) -> None:
         # initで弄ったやつを戻す
         if affected_object is not None:
             affected_object.hide_viewport = True
@@ -176,7 +178,7 @@ class BlendModel:
 
         # image_path_to Texture
 
-    def texture_load(self):
+    def texture_load(self) -> None:
         self.textures = []
         for image_props in self.vrm_pydata.image_properties:
             img = bpy.data.images.load(image_props.filepath)
@@ -196,7 +198,7 @@ class BlendModel:
             ]
             self.textures[texture_index].image.use_fake_user = True
 
-    def make_armature(self):
+    def make_armature(self) -> None:
         # build bones as armature
         bpy.ops.object.add(type="ARMATURE", enter_editmode=True, location=(0, 0, 0))
         self.armature = self.context.object
@@ -208,7 +210,7 @@ class BlendModel:
         armature_edit_bones = dict()
 
         # region bone recursive func
-        def bone_chain(node_id, parent_node_id):
+        def bone_chain(node_id: int, parent_node_id: int) -> None:
             if node_id == -1:  # 自身がrootのrootの時
                 return
 
@@ -238,7 +240,7 @@ class BlendModel:
             )
 
             # region temporary tail pos(glTF doesn't have bone. there defines as joints )
-            def vector_length(bone_vector):
+            def vector_length(bone_vector: List[float]) -> float:
                 return sqrt(
                     pow(bone_vector[0], 2)
                     + pow(bone_vector[1], 2)
@@ -301,7 +303,7 @@ class BlendModel:
         )
 
         # generate edit_bones sorted by node_id for deterministic vrm output
-        def find_connected_node_ids(parent_node_ids):
+        def find_connected_node_ids(parent_node_ids: Sequence[int]) -> Set[int]:
             node_ids = set(parent_node_ids)
             for parent_node_id in parent_node_ids:
                 py_bone = self.vrm_pydata.nodes_dict[parent_node_id]
@@ -327,7 +329,7 @@ class BlendModel:
             print("Master collection doesn't have armature obj")
 
     # region material
-    def make_material(self):
+    def make_material(self) -> None:
         # 適当なので要調整
         self.material_dict = dict()
         for index, mat in enumerate(self.vrm_pydata.materials):
@@ -348,7 +350,12 @@ class BlendModel:
             self.material_dict[index] = b_mat
 
     # region material_util func
-    def set_material_transparent(self, b_mat, pymat, transparent_mode):
+    def set_material_transparent(
+        self,
+        b_mat: bpy.types.Material,
+        pymat: vrm_types.Material,
+        transparent_mode: str,
+    ):
         if transparent_mode == "OPAQUE":
             pass
         elif transparent_mode == "CUTOUT":
@@ -372,13 +379,15 @@ class BlendModel:
                 b_mat.blend_method = "HASHED"
                 b_mat.shadow_method = "HASHED"
 
-    def material_init(self, b_mat):
+    def material_init(self, b_mat: bpy.types.Material) -> None:
         b_mat.use_nodes = True
         for node in b_mat.node_tree.nodes:
             if node.type != "OUTPUT_MATERIAL":
                 b_mat.node_tree.nodes.remove(node)
 
-    def connect_value_node(self, material, value, socket_to_connect):
+    def connect_value_node(
+        self, material: bpy.types.ShaderNode, value, socket_to_connect
+    ) -> bpy.types.ShaderNodeValue:
         if value is None:
             return None
         value_node = material.node_tree.nodes.new("ShaderNodeValue")
@@ -387,7 +396,13 @@ class BlendModel:
         material.node_tree.links.new(socket_to_connect, value_node.outputs[0])
         return value_node
 
-    def connect_rgb_node(self, material, color, socket_to_connect, default_color=None):
+    def connect_rgb_node(
+        self,
+        material: bpy.types.ShaderNode,
+        color: List[float],
+        socket_to_connect,
+        default_color: Optional[List[float]] = None,
+    ) -> bpy.types.ShaderNodeRGB:
         rgb_node = material.node_tree.nodes.new("ShaderNodeRGB")
         rgb_node.label = socket_to_connect.name
         rgb_node.outputs[0].default_value = (
@@ -398,11 +413,11 @@ class BlendModel:
 
     def connect_texture_node(
         self,
-        material,
-        tex_index,
+        material: bpy.types.ShaderNode,
+        tex_index: int,
         color_socket_to_connect=None,
         alpha_socket_to_connect=None,
-    ):
+    ) -> Optional[bpy.types.ShaderNodeTexImage]:
         if tex_index is None:
             return None
         tex = self.vrm_pydata.json["textures"][tex_index]
@@ -444,8 +459,12 @@ class BlendModel:
         return image_node
 
     def connect_with_color_multiply_node(
-        self, material, color, tex_index, socket_to_connect
-    ):
+        self,
+        material: bpy.types.ShaderNode,
+        color: List[float],
+        tex_index: int,
+        socket_to_connect,
+    ) -> bpy.types.ShaderNodeMixRGB:
         multiply_node = material.node_tree.nodes.new("ShaderNodeMixRGB")
         multiply_node.blend_type = "MULTIPLY"
         self.connect_rgb_node(material, color, multiply_node.inputs[1])
@@ -453,12 +472,14 @@ class BlendModel:
         material.node_tree.links.new(socket_to_connect, multiply_node.outputs[0])
         return multiply_node
 
-    def node_group_create(self, material, shader_node_group_name):
+    def node_group_create(
+        self, material: bpy.types.ShaderNode, shader_node_group_name: str
+    ) -> bpy.types.ShaderNodeGroup:
         node_group = material.node_tree.nodes.new("ShaderNodeGroup")
         node_group.node_tree = bpy.data.node_groups[shader_node_group_name]
         return node_group
 
-    def node_placer(self, parent_node):
+    def node_placer(self, parent_node: bpy.types.ShaderNode) -> None:
         bottom_pos = [parent_node.location[0] - 200, parent_node.location[1]]
         for child_node in [
             link.from_node for socket in parent_node.inputs for link in socket.links
@@ -474,7 +495,9 @@ class BlendModel:
 
     # endregion material_util func
 
-    def build_principle_from_gltf_mat(self, b_mat, pymat):
+    def build_principle_from_gltf_mat(
+        self, b_mat: bpy.types.Material, pymat: vrm_types.MaterialGltf
+    ) -> None:
         self.material_init(b_mat)
         principled_node = b_mat.node_tree.nodes.new("ShaderNodeBsdfPrincipled")
 
@@ -508,7 +531,9 @@ class BlendModel:
         )
         b_mat.use_backface_culling = not pymat.double_sided
 
-    def build_material_from_gltf(self, b_mat, pymat):
+    def build_material_from_gltf(
+        self, b_mat: bpy.types.Material, pymat: vrm_types.MaterialGltf
+    ) -> None:
         self.material_init(b_mat)
         gltf_node_name = "GLTF"
         shader_node_group_import(gltf_node_name)
@@ -553,7 +578,9 @@ class BlendModel:
         )
         b_mat.use_backface_culling = not pymat.double_sided
 
-    def build_material_from_mtoon(self, b_mat, pymat):
+    def build_material_from_mtoon(
+        self, b_mat: bpy.types.Material, pymat: vrm_types.MaterialMtoon
+    ) -> None:
         self.material_init(b_mat)
 
         shader_node_group_name = "MToon_unversioned"
@@ -623,7 +650,7 @@ class BlendModel:
             uv_offset_tiling_node.inputs[0], uv_map_node.outputs[0]
         )
 
-        def connect_uv_map_to_texture(texture_node):
+        def connect_uv_map_to_texture(texture_node: bpy.types.ShaderNode) -> None:
             b_mat.node_tree.links.new(
                 texture_node.inputs[0], uv_offset_tiling_node.outputs[0]
             )
@@ -700,7 +727,9 @@ class BlendModel:
         transparent_mode = transparent_exchange_dic[pymat.float_props_dic["_BlendMode"]]
         self.set_material_transparent(b_mat, pymat, transparent_mode)
 
-    def build_material_from_transparent_z_write(self, b_mat, pymat):
+    def build_material_from_transparent_z_write(
+        self, b_mat: bpy.types.Material, pymat: vrm_types.MaterialTransparentZWrite
+    ) -> None:
         self.material_init(b_mat)
 
         z_write_transparent_sg = "TRANSPARENT_ZWRITE"
@@ -724,14 +753,16 @@ class BlendModel:
 
     # endregion material
 
-    def make_primitive_mesh_objects(self, wm, progress):
+    def make_primitive_mesh_objects(
+        self, wm: bpy.types.WindowManager, progress: int
+    ) -> None:
         self.meshes = {}
         self.primitive_obj_dict = {
             pymesh[0].object_id: [] for pymesh in self.vrm_pydata.meshes
         }
         morph_cache_dict = {}  # key:tuple(POSITION,targets.POSITION),value:points_data
         # mesh_obj_build
-        mesh_progress = 0
+        mesh_progress = 0.0
         mesh_progress_unit = 1 / max(1, len(self.vrm_pydata.meshes))
         for pymesh in self.vrm_pydata.meshes:
             b_mesh = bpy.data.meshes.new(pymesh[0].name)
@@ -970,8 +1001,8 @@ class BlendModel:
             # region shape_key
             # shapekey_data_factory with cache
             def absolutize_morph_positions(
-                base_points, morph_target_pos_and_index, prim
-            ):
+                base_points: List[float], morph_target_pos_and_index: List[Any], prim
+            ) -> List[List[float]]:
                 shape_key_positions = []
                 morph_target_pos = morph_target_pos_and_index[0]
                 morph_target_index = morph_target_pos_and_index[1]
@@ -1031,7 +1062,7 @@ class BlendModel:
             wm.progress_update(progress + mesh_progress)
         wm.progress_update(progress + 1)
 
-    def attach_vrm_attributes(self):
+    def attach_vrm_attributes(self) -> None:
         vrm_extensions = json_get(self.vrm_pydata.json, ["extensions", "VRM"], {})
         humanbones_relations = json_get(vrm_extensions, ["humanoid", "humanBones"], [])
 
